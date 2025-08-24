@@ -1,0 +1,47 @@
+# .gitignore 
+
+# Node
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env & secrets
+.env
+.env.local
+.env.*.local
+api/.env
+api/.env.local
+api/.env.*.local
+
+# Data / cache
+api/.data
+worker/.data
+tmp
+dist
+build
+coverage
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode
+.idea
+*.swp
+
+# Tests & reports
+*.lcov
+*.coverage
+reports/
+
+# Docker
+*.pid
+*.seed
+*.db
+
+# CI reports
+gitleaks.sarif
