@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// api/src/server.ts  (yalnız ilgili eklemelerle güncel dosya)
+// api/src/server.ts  
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
