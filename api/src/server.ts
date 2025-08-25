@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// api/src/server.ts
+// api/src/server.ts  (yalnız ilgili eklemelerle güncel dosya)
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
@@ -16,7 +16,7 @@ import { verifyMerkleProof } from "./crypto/merkle.js";
 import healthRoutes from "./routes/health.js";
 import { scheduleDailyRoot } from "./cron/daily-root.js";
 
-// ✅ NEW ROUTES (drop-in)
+// New routes
 import captureRoutes from "./routes/capture.js";
 import verifyRoutes from "./routes/verify.js";
 import correctionsRoutes from "./routes/corrections.js";
@@ -32,6 +32,9 @@ const MAX_DEPTH = Number(process.env.JSON_MAX_DEPTH || 100);
 // ---------- App ----------
 const app = express();
 app.disable("x-powered-by");
+
+// Trust reverse proxies (accurate IPs for rate-limit @ k8s/ingress)
+app.set("trust proxy", true);
 
 // Static files (badge.js, demo pages, etc.)
 app.use(express.static(path.join(process.cwd(), "api/public")));
@@ -102,10 +105,8 @@ function popJob(): Job | undefined {
   return job;
 }
 
-// ---------- Routes (core) ----------
+// ---------- Routes ----------
 app.use(healthRoutes);
-
-// ✅ NEW: verify/status for badge.js, history, correction/dispute, capture
 app.use(verifyRoutes());
 app.use(historyRoutes());
 app.use(correctionsRoutes(store));
@@ -116,8 +117,8 @@ app.use(captureRoutes(store));
 app.post(
   "/submit",
   rateLimit({
-    bucketSize: Number(process.env.RL_BUCKET || 30),
-    refillPerSec: Number(process.env.RL_REFILL || 0.5),
+    bucketSize: Number(process.env.RL_BUCKET || 80),
+    refillPerSec: Number(process.env.RL_REFILL || 5),
   }),
   (req, res) => {
     const raw = req.body?.payload;
