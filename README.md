@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="./logo.png" width="180" alt="Privora Logo">
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/status-active-brightgreen?style=for-the-badge" alt="status" />
   <img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=for-the-badge" alt="license" />
   <img src="https://img.shields.io/badge/build-passing-success?style=for-the-badge" alt="build" />
