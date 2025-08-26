@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./logo.png" width="180" alt="Privora Logo">
+  <img src="./logo.png22" width="180" alt="Privora Logo">
 </p>
 
 <p align="center">
