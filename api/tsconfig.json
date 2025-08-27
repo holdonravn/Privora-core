@@ -1,10 +1,16 @@
-- Added api/package.json as the initial package manifest
-- Defined project metadata (name, version, type, engines)
-- Configured scripts for development, build, start, cron jobs, and audit
-- Included dependencies:
-  • express, cors, helmet, node-cron, node-fetch
-  • prom-client for metrics
-  • redis client
-  • archiver for packaging
-- Added devDependencies for TypeScript, tsx, and type definitions
-- Enforced Node.js >= 20.0.0
+// SPDX-License-Identifier: Apache-2.0
+// api/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "lib",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+} com
