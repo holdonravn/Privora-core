@@ -18,7 +18,7 @@ Unacceptable behavior includes:
 
 ## Enforcement
 - Violations may result in warnings, temporary bans, or permanent bans.
-- Reports can be sent to **maintainers@your-org.com**.
+- Reports can be sent to x/holdonravn.
 - All complaints will be reviewed and investigated promptly and fairly.
 
 ## Attribution
