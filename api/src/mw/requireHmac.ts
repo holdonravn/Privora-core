@@ -61,4 +61,4 @@ export function requireHmac() {
       return res.status(401).json({ ok: false, error: "auth-failed" });
     }
   };
-} com
+}
