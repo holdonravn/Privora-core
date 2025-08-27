@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// api/src/server.ts  
+// api/src/server.ts
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import client from "prom-client";
 import path from "node:path";
+import pino from "pino";
+import pinoHttp from "pino-http";
 import { randomUUID } from "node:crypto";
 
 import { rateLimit } from "./mw/rateLimit.js";
@@ -15,59 +17,66 @@ import { ProofStore, type ProofLine } from "./store/proof-store.js";
 import { verifyMerkleProof } from "./crypto/merkle.js";
 import healthRoutes from "./routes/health.js";
 import { scheduleDailyRoot } from "./cron/daily-root.js";
-
-// New routes
-import captureRoutes from "./routes/capture.js";
 import verifyRoutes from "./routes/verify.js";
+import captureRoutes from "./routes/capture.js";
 import correctionsRoutes from "./routes/corrections.js";
 import disputesRoutes from "./routes/disputes.js";
 import historyRoutes from "./routes/history.js";
+import { metricsGuard } from "./mw/metricsGuard.js";
 
-// ---------- Config ----------
 const PORT = Number(process.env.PORT || 4000);
 const DATA_DIR = process.env.DATA_DIR || ".data";
 const JSON_LIMIT = process.env.JSON_LIMIT || "256kb";
 const MAX_DEPTH = Number(process.env.JSON_MAX_DEPTH || 100);
 
-// ---------- App ----------
 const app = express();
 app.disable("x-powered-by");
-
-// Trust reverse proxies (accurate IPs for rate-limit @ k8s/ingress)
 app.set("trust proxy", true);
 
-// Static files (badge.js, demo pages, etc.)
-app.use(express.static(path.join(process.cwd(), "api/public")));
+// RAW BODY (HMAC için) — JSON middleware'dan önce
+app.use((req, _res, next) => {
+  const chunks: Buffer[] = [];
+  req.on("data", c => chunks.push(c));
+  req.on("end", () => { (req as any)._raw = Buffer.concat(chunks); next(); });
+});
 
+// Static (badge.js vs.)
+app.use(express.static(path.join(process.cwd(), "api/public")));
 app.use(express.json({ limit: JSON_LIMIT }));
-app.use(helmet({ contentSecurityPolicy: false }));
+
+// pino + request-id
+const logger = pino({ level: process.env.LOG_LEVEL || "info" });
+app.use(pinoHttp({ logger, genReqId: req => (req.headers["x-request-id"] as string) || randomUUID() }));
+app.use((req, res, next) => { res.setHeader("X-Request-Id", (req as any).id); next(); });
+
+// Helmet + CSP
+const BADGE_ORIGIN = process.env.BADGE_SCRIPT_ORIGIN || "'self'";
+app.use(helmet());
+app.use(helmet.contentSecurityPolicy({
+  useDefaults: true,
+  directives: {
+    "default-src": ["'self'"],
+    "script-src": ["'self'", BADGE_ORIGIN],
+    "img-src": ["'self'", "data:"],
+    "connect-src": ["'self'"],
+    "frame-ancestors": ["'none'"],
+  },
+}));
 app.use(cors({ origin: process.env.ALLOWED_ORIGINS || "*" }));
 
-// ---------- Metrics ----------
+// Metrics
 const registry = new client.Registry();
 client.collectDefaultMetrics({ register: registry });
-
 const reqCounter = new client.Counter({
-  name: "privora_requests_total",
-  help: "Total HTTP requests",
-  labelNames: ["route", "method", "code"],
-  registers: [registry],
+  name: "privora_requests_total", help: "Total HTTP requests",
+  labelNames: ["route", "method", "code"], registers: [registry],
 });
 const proofsStored = new client.Counter({
-  name: "privora_proofs_stored_total",
-  help: "Total proofs stored (NDJSON append)",
-  registers: [registry],
-});
-const rateLimited = new client.Counter({
-  name: "privora_rate_limited_total",
-  help: "429 count",
-  registers: [registry],
+  name: "privora_proofs_stored_total", help: "Total proofs stored (NDJSON append)", registers: [registry],
 });
 const httpDuration = new client.Histogram({
-  name: "http_request_duration_seconds",
-  help: "Request duration histogram",
-  buckets: [0.01, 0.05, 0.1, 0.3, 0.6, 1, 2, 5],
-  registers: [registry],
+  name: "http_request_duration_seconds", help: "Request duration histogram",
+  buckets: [0.01, 0.05, 0.1, 0.3, 0.6, 1, 2, 5], registers: [registry],
 });
 app.use((req, res, next) => {
   const end = httpDuration.startTimer();
@@ -78,34 +87,20 @@ app.use((req, res, next) => {
   next();
 });
 
-// ---------- State ----------
+// State
 const store = new ProofStore(DATA_DIR);
 type Job = { id: string; payload: any; createdAt: number };
 const queue: Job[] = [];
-const queueDepthGauge = new client.Gauge({
-  name: "privora_queue_depth",
-  help: "In-memory queue depth",
-  registers: [registry],
-});
 function depthOf(x: any, depth = 0): number {
   if (x === null || typeof x !== "object") return depth;
   if (depth > MAX_DEPTH) return depth;
   if (Array.isArray(x)) return x.reduce((m, v) => Math.max(m, depthOf(v, depth + 1)), depth);
   return Object.values(x).reduce((m, v) => Math.max(m, depthOf(v, depth + 1)), depth + 1);
 }
-function pushJob(payload: any): Job {
-  const job: Job = { id: randomUUID(), payload, createdAt: Date.now() };
-  queue.push(job);
-  queueDepthGauge.set(queue.length);
-  return job;
-}
-function popJob(): Job | undefined {
-  const job = queue.shift();
-  queueDepthGauge.set(queue.length);
-  return job;
-}
+function pushJob(payload: any): Job { const job: Job = { id: randomUUID(), payload, createdAt: Date.now() }; queue.push(job); return job; }
+function popJob(): Job | undefined { return queue.shift(); }
 
-// ---------- Routes ----------
+// Routes
 app.use(healthRoutes);
 app.use(verifyRoutes());
 app.use(historyRoutes());
@@ -113,7 +108,6 @@ app.use(correctionsRoutes(store));
 app.use(disputesRoutes(store));
 app.use(captureRoutes(store));
 
-/** SUBMIT — rate-limit + payload guard + risk gating */
 app.post(
   "/submit",
   rateLimit({
@@ -136,18 +130,15 @@ app.post(
   }
 );
 
-/** NEXT-JOB — HMAC + fresh timestamp */
 app.post("/next-job", requireFreshTs(), requireHmac(), (_req, res) => {
   const job = popJob();
   if (!job) return res.json({ ok: true, job: null });
   return res.json({ ok: true, job: { id: job.id, payload: job.payload } });
 });
 
-/** PROOF — HMAC + fresh timestamp + NDJSON append */
 app.post("/proof", requireFreshTs(), requireHmac(), async (req, res) => {
   const { jobId, proofHash, manifestHash } = req.body ?? {};
   if (!jobId || !proofHash) return res.status(400).json({ ok: false, error: "jobId & proofHash required" });
-
   const line: ProofLine = {
     jobId: String(jobId),
     proofHash: String(proofHash),
@@ -159,7 +150,6 @@ app.post("/proof", requireFreshTs(), requireHmac(), async (req, res) => {
   return res.json({ ok: true, stored: true });
 });
 
-/** PROOFS SNAPSHOT */
 app.get("/proofs", (_req, res) => {
   const snap = store.currentRoot();
   return res.json({
@@ -173,7 +163,6 @@ app.get("/proofs", (_req, res) => {
   });
 });
 
-/** INCLUSION VERIFY (off-chain) */
 app.get("/proofs/verify", (req, res) => {
   try {
     const leaf = String(req.query.leaf || "");
@@ -186,12 +175,17 @@ app.get("/proofs/verify", (req, res) => {
   }
 });
 
-/** METRICS */
-app.get("/metrics", async (_req, res) => {
-  res.set("Content-Type", registry.contentType);
-  res.end(await registry.metrics());
+app.get("/metrics", metricsGuard(), async (_req, res) => {
+  res.set("Content-Type", client.register.contentType);
+  res.end(await client.register.metrics());
 });
 
-// ---------- Boot ----------
+// Global error handler
+app.use((err: any, _req, res, _next) => {
+  logger.error(err);
+  res.status(500).json({ ok: false, error: "internal" });
+});
+
+// Boot
 scheduleDailyRoot();
-app.listen(PORT, () => console.log(`[api] listening on :${PORT}`));
+app.listen(PORT, () => logger.info({ port: PORT }, "[api] listening"));
