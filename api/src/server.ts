@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // api/src/server.ts
+
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
@@ -15,6 +16,7 @@ import { requireHmac } from "./mw/requireHmac.js";
 import { riskScore } from "./risk/riskScore.js";
 import { ProofStore, type ProofLine } from "./store/proof-store.js";
 import { verifyMerkleProof } from "./crypto/merkle.js";
+
 import healthRoutes from "./routes/health.js";
 import { scheduleDailyRoot } from "./cron/daily-root.js";
 import verifyRoutes from "./routes/verify.js";
@@ -33,18 +35,18 @@ const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", true);
 
-// RAW BODY (HMAC için) — JSON middleware'dan önce
+// RAW BODY CAPTURE (HMAC doğrulaması için)
 app.use((req, _res, next) => {
   const chunks: Buffer[] = [];
   req.on("data", c => chunks.push(c));
   req.on("end", () => { (req as any)._raw = Buffer.concat(chunks); next(); });
 });
 
-// Static (badge.js vs.)
+// Statik dosyalar (ör. badge.js)
 app.use(express.static(path.join(process.cwd(), "api/public")));
 app.use(express.json({ limit: JSON_LIMIT }));
 
-// pino + request-id
+// Logger (pino) + X-Request-ID
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 app.use(pinoHttp({ logger, genReqId: req => (req.headers["x-request-id"] as string) || randomUUID() }));
 app.use((req, res, next) => { res.setHeader("X-Request-Id", (req as any).id); next(); });
@@ -64,7 +66,7 @@ app.use(helmet.contentSecurityPolicy({
 }));
 app.use(cors({ origin: process.env.ALLOWED_ORIGINS || "*" }));
 
-// Metrics
+// Prometheus metrics
 const registry = new client.Registry();
 client.collectDefaultMetrics({ register: registry });
 const reqCounter = new client.Counter({
@@ -72,7 +74,7 @@ const reqCounter = new client.Counter({
   labelNames: ["route", "method", "code"], registers: [registry],
 });
 const proofsStored = new client.Counter({
-  name: "privora_proofs_stored_total", help: "Total proofs stored (NDJSON append)", registers: [registry],
+  name: "privora_proofs_stored_total", help: "Total proofs stored", registers: [registry],
 });
 const httpDuration = new client.Histogram({
   name: "http_request_duration_seconds", help: "Request duration histogram",
@@ -87,9 +89,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// State
-const store = new ProofStore(DATA_DIR);
+// Job Queue
 type Job = { id: string; payload: any; createdAt: number };
+const store = new ProofStore(DATA_DIR);
 const queue: Job[] = [];
 function depthOf(x: any, depth = 0): number {
   if (x === null || typeof x !== "object") return depth;
