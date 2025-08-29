@@ -1,136 +1,125 @@
+// ============================================================================
 // SPDX-License-Identifier: Apache-2.0
-// api/src/store/proof-store.ts
+// File: api/src/store/proof-store.ts
+// NDJSON store: header (ver), hash-chain (prevHash/lineHash), basit root snapshot
+// ============================================================================
 import fs from "node:fs";
 import path from "node:path";
-import { once } from "node:events";
-import { MerkleBranch, sha256Buf, merklePath, merkleRoot } from "../crypto/merkle";
+import readline from "node:readline";
+import crypto from "node:crypto";
 
 export type ProofLine = {
   jobId: string;
-  proofHash: string;        // 0x...
-  manifestHash?: string;    // 0x...
-  createdAt: number;        // ms epoch
+  proofHash: string;
+  manifestHash?: string;
+  createdAt: number;
+  // aşağıdakiler otomatik doldurulur
+  prevHash?: string | null;
+  lineHash?: string;
 };
 
-type WriterState = {
-  stream: fs.WriteStream;
-  bytes: number;
-  dayKey: string;          // YYYYMMDD
-  leafOffsets: number[];
-};
-
-function ensureDir(dir: string) { fs.mkdirSync(dir, { recursive: true }); }
-function dayKeyFrom(ts: number): string {
-  const d = new Date(ts);
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}${m}${day}`;
-}
+type RootSnap = { day: string; leafCount: number; merkleRoot: string | null; file: string | null };
 
 export class ProofStore {
-  dir: string;
-  maxBytes: number;
-  writer?: WriterState;
-  leaves: Buffer[] = [];
+  public currentFilePath: string;
+  private dir: string;
+  private lastHash: string | null = null;
+  private leafs: string[] = [];
+  private day: string;
 
-  constructor(dir: string, opts?: { maxBytes?: number }) {
+  constructor(dir: string) {
     this.dir = dir;
-    this.maxBytes = opts?.maxBytes ?? 50 * 1024 * 1024;
-    ensureDir(this.dir);
-    this.rotateIfNeeded(Date.now());
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    this.day = new Date().toISOString().slice(0,10);
+    this.currentFilePath = path.join(this.dir, `proofs-${this.day}.ndjson`);
+    void this.ensureHeader(this.currentFilePath);
+    void this.recoverState(this.currentFilePath);
   }
 
-  currentNdjsonPath(dayKey: string) { return path.join(this.dir, `proofs-${dayKey}.ndjson`); }
-  currentRootPath(dayKey: string)    { return path.join(this.dir, `proofs-${dayKey}.root.json`); }
-  currentIndexPath(dayKey: string)   { return path.join(this.dir, `proofs-${dayKey}.index.json`); }
+  private sha(s: string) { return crypto.createHash("sha256").update(s).digest("hex"); }
 
-  private openWriter(dayKey: string) {
-    const f = this.currentNdjsonPath(dayKey);
-    const stream = fs.createWriteStream(f, { flags: "a", encoding: "utf8" });
-    const bytes = fs.existsSync(f) ? fs.statSync(f).size : 0;
-    this.writer = { stream, bytes, dayKey, leafOffsets: [] };
+  private async fsStatSafe(fp: string) {
+    try { return await fs.promises.stat(fp); } catch { return { size: 0 } as fs.Stats; }
+  }
 
-    // restore previous leaves (if any)
-    const idx = this.currentIndexPath(dayKey);
-    this.leaves = [];
-    if (fs.existsSync(idx)) {
-      try {
-        const prev = JSON.parse(fs.readFileSync(idx, "utf8")) as { leaves: string[] };
-        for (const hx of prev.leaves) this.leaves.push(Buffer.from(hx.slice(2), "hex"));
-      } catch {}
+  private async appendRaw(fp: string, text: string) {
+    await fs.promises.appendFile(fp, text);
+  }
+
+  private async ensureHeader(fp: string) {
+    const st = await this.fsStatSafe(fp);
+    if (st.size > 0) return;
+    const hdr = {
+      t: "header",
+      ver: 1,
+      createdAt: Date.now(),
+      leafHashAlg: (process.env.MERKLE_LEAF_HASH || "sha256").toLowerCase(),
+      fileFormat: "ndjson",
+    };
+    const raw = JSON.stringify(hdr) + "\n";
+    await this.appendRaw(fp, raw);
+    this.lastHash = this.sha(JSON.stringify(hdr));
+  }
+
+  private async recoverState(fp: string) {
+    if (!fs.existsSync(fp)) return;
+    const rl = readline.createInterface({ input: fs.createReadStream(fp) });
+    let last: string | null = null;
+    for await (const raw of rl) {
+      const line = raw.trim();
+      if (!line) continue;
+      const obj = JSON.parse(line);
+      if (obj.t === "header") {
+        this.lastHash = this.sha(JSON.stringify(obj));
+        continue;
+      }
+      last = line;
+      if (obj.proofHash) this.leafs.push(obj.proofHash);
+      this.lastHash = obj.lineHash || this.sha((this.lastHash || "") + line);
+    }
+    if (!this.lastHash) await this.ensureHeader(fp);
+  }
+
+  private rotateIfNeeded() {
+    const d = new Date().toISOString().slice(0,10);
+    if (d !== this.day) {
+      this.day = d;
+      this.currentFilePath = path.join(this.dir, `proofs-${this.day}.ndjson`);
+      this.lastHash = null;
+      this.leafs = [];
+      void this.ensureHeader(this.currentFilePath);
+      void this.recoverState(this.currentFilePath);
     }
   }
 
-  private rotateIfNeeded(ts: number) {
-    const dk = dayKeyFrom(ts);
-    if (!this.writer) return this.openWriter(dk);
-    const needDayRotate = this.writer.dayKey !== dk;
-    const needSizeRotate = this.writer.bytes >= this.maxBytes;
-    if (needDayRotate || needSizeRotate) { this.closeWriter(); this.openWriter(dk); }
-  }
-
-  private flushRootAndIndex() {
-    if (!this.writer) return;
-    const dayKey = this.writer.dayKey;
-    const rootPath = this.currentRootPath(dayKey);
-    const indexPath = this.currentIndexPath(dayKey);
-    const rootJson = {
-      day: dayKey,
-      leafCount: this.leaves.length,
-      merkleRoot: ("0x" + merkleRoot(this.leaves).toString("hex")),
-      updatedAt: Date.now()
-    };
-    fs.writeFileSync(rootPath, JSON.stringify(rootJson, null, 2), "utf8");
-    const leafHexes = this.leaves.map(buf => ("0x" + buf.toString("hex")));
-    fs.writeFileSync(indexPath, JSON.stringify({ day: dayKey, leaves: leafHexes }, null, 0), "utf8");
-  }
-
-  private async _appendJsonLineAndHash(obj: unknown, ts: number) {
-    this.rotateIfNeeded(ts);
-    if (!this.writer) throw new Error("writer not initialized");
-
-    const json = JSON.stringify(obj) + "\n";
-    const ok = this.writer.stream.write(json);
-    this.writer.bytes += Buffer.byteLength(json);
-    if (!ok) await once(this.writer.stream, "drain");
-
-    const leaf = sha256Buf(json);
-    this.leaves.push(leaf);
-
-    if (this.leaves.length % 100 === 0) this.flushRootAndIndex();
-  }
-
-  /** Orijinal proof satırı (geriye dönük uyumluluk) */
   async append(line: ProofLine) {
-    const ts = line.createdAt || Date.now();
-    await this._appendJsonLineAndHash(line, ts);
+    this.rotateIfNeeded();
+    const rawBase = JSON.stringify({
+      jobId: line.jobId,
+      proofHash: line.proofHash,
+      manifestHash: line.manifestHash,
+      createdAt: line.createdAt,
+    });
+    const lineHash = this.sha((this.lastHash || "") + rawBase);
+    const chained = { ...JSON.parse(rawBase), prevHash: this.lastHash, lineHash };
+    await this.appendRaw(this.currentFilePath, JSON.stringify(chained) + "\n");
+    this.lastHash = lineHash;
+    this.leafs.push(line.proofHash);
   }
 
-  /** GENEL AMAÇLI append — correction/dispute/history kayıtları için */
-  async appendAny(obj: Record<string, unknown>) {
-    const ts = Number(obj?.["createdAt"] ?? obj?.["openedAt"] ?? obj?.["updatedAt"] ?? Date.now());
-    await this._appendJsonLineAndHash(obj, ts);
-  }
-
-  currentRoot() {
-    if (!this.writer) return null;
-    return {
-      day: this.writer.dayKey,
-      leafCount: this.leaves.length,
-      merkleRoot: ("0x" + merkleRoot(this.leaves).toString("hex")),
-      file: path.basename(this.currentNdjsonPath(this.writer.dayKey)),
-    };
-  }
-
-  getPath(dayKey: string, index: number): { branch: MerkleBranch; root: `0x${string}` } | null {
-    const idxPath = this.currentIndexPath(dayKey);
-    if (!fs.existsSync(idxPath)) return null;
-    const { leaves } = JSON.parse(fs.readFileSync(idxPath, "utf8")) as { leaves: string[] };
-    const bufs = leaves.map((h) => Buffer.from(h.slice(2), "hex"));
-    if (index < 0 || index >= bufs.length) return null;
-    const branch = merklePath(bufs, index);
-    const root = ("0x" + merkleRoot(bufs).toString("hex")) as `0x${string}`;
-    return { branch, root };
+  currentRoot(): RootSnap {
+    // minimal merkle: yaprakları hash’leyip katmanlı indirgeme (sha256)
+    const h = (s: string) => this.sha(s);
+    let nodes = this.leafs.map(h);
+    if (nodes.length === 0) return { day: this.day, leafCount: 0, merkleRoot: null, file: this.currentFilePath };
+    while (nodes.length > 1) {
+      const next: string[] = [];
+      for (let i=0; i<nodes.length; i+=2) {
+        if (i+1 < nodes.length) next.push(h(nodes[i] + nodes[i+1]));
+        else next.push(nodes[i]);
+      }
+      nodes = next;
+    }
+    return { day: this.day, leafCount: this.leafs.length, merkleRoot: nodes[0], file: this.currentFilePath };
   }
 }
