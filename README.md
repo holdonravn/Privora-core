@@ -12,7 +12,7 @@
 # 🔐 Privora
 
 Privora is a **Confidential Computing & Verifiable AI framework** delivering **secure, transparent, and interoperable** infrastructure for enterprises and developers.  
-It extends **Zero1 Labs MCP (Model Context Protocol)** with **TEE + ZK Proofs + Media Provenance**, ensuring trust, confidentiality, and verifiability across AI and blockchain applications.
+It extends **Zero1 Labs MCP (Model Context Protocol)** with **TEE, ZK Proofs, and Media Provenance**, ensuring **trust, confidentiality, and verifiability** across AI and blockchain workflows.
 
 ---
 
@@ -21,39 +21,38 @@ It extends **Zero1 Labs MCP (Model Context Protocol)** with **TEE + ZK Proofs + 
 
 ---
 
-## 🔍 What Privora Adds on Top of Zero1 MCP
+## 🔍 Key Differentiators
 
-- **Confidential Compute** → Nitro Enclaves as default; optional FHE/MPC plugins  
-- **Attestation Binding** → Enclave measurements bound into `contextHash` (CBOR `attestHash`)  
+- **Confidential Compute** → Nitro Enclaves by default; optional FHE/MPC plugins  
+- **Attestation Binding** → Enclave measurements hashed into `contextHash` (CBOR `attestHash`)  
 - **On-chain Proof Trails** → `ProofSubmittedV2` / `ProofBatchSubmittedV2` (Merkle root, modelHash, contextHash)  
-- **Batching & Gas Efficiency** → 10–100+ jobs aggregated into 1 proof → drastic $gas/job reduction  
-- **Secure Key Management** → KMS/HSM rotation; app never handles raw keys  
-- **Guardian / Multisig** → `SubmitterProxy` with pause, block limits, idempotency TTL  
-- **Production-Ready Ops** → SLOs, runbooks, Prometheus+Grafana alerts, DLQ/SQS integration  
-- **SDK Verification** → `awaitProof()`, `verifySingleV2()`, `verifyBatchV2()` helpers  
-- **Cost Guardrails** → Auto-switch to minimal-proof mode when p95 gas > cap  
-- **PQC Ready** → Optional Kyber/Dilithium integration  
-- **Media Integrity Pipeline** → Perceptual hashes (pHash/dHash/aHash) + C2PA manifest check + AI risk score + append-only proof trail  
+- **Batching & Gas Efficiency** → Aggregate 10–100+ jobs into one proof → massive cost reduction  
+- **Secure Key Management** → KMS/HSM rotation, app never exposes raw keys  
+- **Guardian / Multisig** → `SubmitterProxy` with pause, block limits, and idempotency TTL  
+- **Ops-Ready** → SLOs, Prometheus+Grafana dashboards, DLQ/SQS integration, runbooks  
+- **Developer Tooling** → SDK verification helpers (`awaitProof()`, `verifySingleV2()`)  
+- **Quantum-Readiness** → Optional PQC (Kyber, Dilithium) support  
+- **Media Integrity Pipeline** → pHash/dHash/aHash, C2PA manifest validation, AI risk scoring  
 
 ---
 
 ## 🚀 Quickstart
 
 ```bash
-# Clone
+# Clone the repo
 git clone git@github.com:your-org/privora.git
 cd privora
 
-# Install dependencies (root)
+# Install dependencies
 npm install
 
-# Run API (dev mode)
+# Start API (dev)
 cd api && npm run dev
 
-# Run Worker (dev mode)
+# Start Worker
 cd worker && npm run dev
 
-# Or run both via helper script
+# Run both
 ./scripts/dev-run.sh
 
 
@@ -61,46 +60,46 @@ cd worker && npm run dev
 
 🏷️ Embed Verification Badge
 
-To display a verification badge inside any webpage:
-
 <script src="https://your-api-domain.com/badge.js" defer></script>
 <div data-privora-proof="PROOF_ID"></div>
 
-	•	🟢 Verified → Proof exists & intact
-	•	🟠 Check → Correction/dispute attached
-	•	⚪️ Unverified → No proof found
+Status	Meaning
+🟢 Verified	Proof exists & verified
+🟠 Check	Proof with corrections/disputes
+⚪️ Unverified	No proof found
+
 
 ⸻
 
 ✨ Features
-	•	✅ Confidential AI Layer → Secure model execution in TEE
-	•	✅ Verifiable Outputs → ZK proofs for AI + blockchain computations
-	•	✅ Idempotent API → Replay-resistant & tamper-proof calls
-	•	✅ Modular Architecture → API, Worker, Proof, On-chain registry
-	•	✅ Developer Friendly → SDK, demo scripts, example contracts
-	•	✅ Media Provenance / Deepfake Defense → Fake media detection, C2PA check, risk scoring
+	•	✅ Confidential AI Layer → Private inference in TEE
+	•	✅ Verifiable Outputs → ZK-proofed computations
+	•	✅ Idempotent API → Replay-protected endpoints
+	•	✅ Modular Architecture → API, Worker, Proof Store, Registry
+	•	✅ Media Provenance → Deepfake detection & C2PA validation
+	•	✅ Developer-Friendly → SDK, CLI, example contracts
 
 ⸻
 
 💡 Use Cases
-	•	🏦 Finance / DeFi → Confidential transactions, verifiable audits
-	•	🏥 Healthcare → Secure data analysis & cross-institution research
-	•	🤖 AI/ML → Private inference & verifiable training pipelines
-	•	🎥 Media Provenance / Deepfake Defense → Fake video/image detection, C2PA verification, risk scoring
-	•	🌐 Web3 / DAOs → Confidential voting, zk-governance proofs
-	•	🏢 Enterprise SaaS → GDPR/HIPAA-compliant verifiable data handling
+	•	🏦 Finance/DeFi → Confidential transactions, verifiable audits
+	•	🏥 Healthcare → Secure medical data pipelines, multi-institution research
+	•	🤖 AI/ML → Private model inference & verifiable training
+	•	🎥 Media → Fake video/image detection & authenticity badges
+	•	🌐 Web3/DAO → zk-governance, privacy-first voting
+	•	🏢 Enterprise SaaS → GDPR/HIPAA-compliant data management
 
 ⸻
 
 📂 Project Structure
 
 privora/
- ├── api/         # API Layer (Express + HMAC/Nonce security)
- ├── worker/      # Worker (Proof & Queue processing)
- ├── sdk/         # SDK helpers (crypto, verification, submit)
- ├── contracts/   # Smart contracts (ProofRegistry, Verifier)
- ├── infra/       # Monitoring, dashboards, alert rules
- ├── scripts/     # Utility scripts (demo, cron)
+ ├── api/         # API Layer (Express, HMAC/Nonce Security)
+ ├── worker/      # Queue + Proof Processor
+ ├── sdk/         # Crypto + Proof Verification Helpers
+ ├── contracts/   # Smart Contracts
+ ├── infra/       # Dashboards, Alert Rules
+ ├── scripts/     # CLI & Automation
  └── README.md
 
 
@@ -108,65 +107,60 @@ privora/
 
 ⚙️ Environment Setup
 
-Create a .env file in the root:
+.env example (never commit production secrets):
 
 # Server
 PORT=4000
 NODE_ENV=development
 
-# Database
-DB_URL=postgres://user:pass@localhost:5432/privora
+# Redis & Queue
+REDIS_URL=redis://localhost:6379
 
 # Blockchain
 RPC_URL=https://your-chain-rpc
 PRIVATE_KEY=your-private-key
 
 # Security
-HMAC_SECRET=super-secret-hmac
-ENCLAVE_KEY_PATH=./keys/enclave.pem
+HMAC_KEYS=default=super-secret-hmac
+BADGE_SCRIPT_ORIGIN=https://cdn.yourdomain.com
 
 
 ⸻
 
 📊 Tokenomics & Compliance
-	•	Utility-First: Token is required for proof submission fees, staking, SLA tiers, and governance.
-	•	Transparent Distribution: 1B PRV (60% emission, 20% foundation, 10% partners, 10% community).
-	•	Deflationary: 20% of proof fees burned, 80% redistributed as staking rewards.
-	•	Compliance-First:
-	•	No ICO / No public fundraising → avoids securities classification risk.
-	•	KYC/AML-ready for institutional integration.
-	•	Audit-friendly for regulators and enterprises.
-	•	Aligns with GDPR/HIPAA standards for data handling.
+	•	Utility-First Token: Proof fees, staking, SLA tiers, governance
+	•	Supply: 1B PRV (60% emission, 20% foundation, 10% partners, 10% community)
+	•	Deflationary: 20% of proof fees burned
+	•	No ICO / No Public Fundraise → Minimizes regulatory risk
+	•	GDPR/HIPAA Aligned → Compliance-first design
 
 ⸻
 
 🗺️ Roadmap
-	•	✅ Phase 1: Proof store + Merkle root + on-chain registry
-	•	🚧 Phase 2: Attestation + TEE-bound proofs
-	•	🚧 Phase 3: ZK integration (Groth16 / Plonk)
-	•	🚧 Phase 4: Multi-chain relays (Base, Ethereum, Optimism)
-	•	🚧 Phase 5: Privora SDK + Dashboard UI
-	•	🚧 Phase 6: Media Provenance & Deepfake Defense POC
+	•	✅ Phase 1: Proof store + Merkle root
+	•	🚧 Phase 2: TEE-bound proofs
+	•	🚧 Phase 3: ZK integrations (Plonk, Groth16)
+	•	🚧 Phase 4: Multi-chain support (Base, Optimism)
+	•	🚧 Phase 5: SDK + Dashboard
+	•	🚧 Phase 6: Media Provenance Engine
 
 ⸻
 
 🤝 Contributing
 
-Contributions, issues, and feature requests are welcome!
-Open a PR or create an issue anytime.
+We welcome contributions!
+PRs and issues are open for all developers.
 
-⚠️ Security Note:
-	•	Do NOT commit secrets, private keys, or production .env files.
-	•	All commits are automatically scanned with gitleaks.
-	•	Report vulnerabilities responsibly via SECURITY.md.
+⚠️ Security:
+	•	No private keys or secrets in commits
+	•	CI enforces gitleaks scan
+	•	Report vulnerabilities responsibly (see SECURITY.md)
 
 ⸻
 
-📜 License & Legal Disclaimer
+📜 License
 
-Licensed under the Apache License 2.0 – see LICENSE.
-
-Disclaimer:
-Privora is provided “as is”, without warranty of any kind. The authors and contributors are not responsible for any damages, compliance breaches, or misuse of the software. Users are responsible for ensuring legal/regulatory compliance in their own jurisdictions.
+Apache License 2.0 – see LICENSE for details.
+Privora is provided “as is”, without warranty of any kind.
 
 ---
