@@ -7,7 +7,6 @@ import path from "node:path";
 import pino from "pino";
 import pinoHttp from "pino-http";
 import { randomUUID } from "node:crypto";
-import client from "prom-client";
 import { createClient } from "ioredis";
 
 import { rateLimit } from "./mw/rateLimit.js";
@@ -17,7 +16,6 @@ import { riskScore } from "./risk/riskScore.js";
 import { ProofStore, type ProofLine } from "./store/proof-store.js";
 import { verifyMerkleProof } from "./crypto/merkle.js";
 import healthRoutes from "./routes/health.js";
-import { metricsGuard } from "./mw/metricsGuard.js";
 import verifyRoutes from "./routes/verify.js";
 import captureRoutes from "./routes/capture.js";
 import correctionsRoutes from "./routes/corrections.js";
@@ -28,6 +26,7 @@ import { AppendQueue } from "./store/append-queue.js";
 import { registry, httpRequestsTotal, httpDuration } from "./metrics/registry.js";
 import { scheduleDailyAnchor, setAnchorRedis } from "./cron/daily-anchor.js";
 import { scheduleAnchorRetry } from "./cron/anchor-retry.js";
+import proofsExplorerRoutes from "./routes/proofs-explorer.js";
 
 const PORT = Number(process.env.PORT || 4000);
 const DATA_DIR = process.env.DATA_DIR || ".data";
@@ -122,7 +121,7 @@ app.use((req, res, next) => {
   });
   next();
 });
-app.get("/metrics", metricsGuard(), async (_req, res) => {
+app.get("/metrics", async (_req, res) => {
   res.set("Content-Type", registry.contentType);
   res.end(await registry.metrics());
 });
@@ -179,6 +178,15 @@ app.use(disputesRoutes(store));
 app.use(captureRoutes(store));
 app.use("/api", fheRoutes());
 
+// Proof Explorer routes
+app.use(
+  proofsExplorerRoutes({
+    dataDir: DATA_DIR,
+    anchorsDir: process.env.ANCHOR_DIR || ".anchors",
+    fileHint: () => store.currentFilePath,
+  })
+);
+
 // Public: Submit
 app.post(
   "/submit",
@@ -215,14 +223,14 @@ app.post(
   }
 );
 
-// Internal: Next job (HMAC-protected)
+// Internal: Next job
 app.post("/next-job", requireFreshTs(), requireHmac(), (_req, res) => {
   const job = popJob();
   if (!job) return res.json({ ok: true, job: null });
   return res.json({ ok: true, job: { id: job.id, payload: job.payload } });
 });
 
-// Internal: Proof store (HMAC-protected)
+// Internal: Proof store
 app.post("/proof", requireFreshTs(), requireHmac(), async (req, res) => {
   const { jobId, proofHash, manifestHash } = req.body ?? {};
   if (!jobId || !proofHash)
@@ -246,7 +254,7 @@ app.post("/proof", requireFreshTs(), requireHmac(), async (req, res) => {
   return res.json({ ok: true, stored: true });
 });
 
-// Public: Proofs
+// Proof status
 app.get("/proofs", (_req, res) => {
   const snap = store.currentRoot();
   return res.json({
@@ -260,7 +268,7 @@ app.get("/proofs", (_req, res) => {
   });
 });
 
-// Public: Proof verify
+// Proof verify
 app.get("/proofs/verify", (req, res) => {
   try {
     const leaf = String(req.query.leaf || "");
